@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: crop-api
+    env: python
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: WEATHER_API_KEY
+        value: 15b3a9327f4039ff4e81dffc63a1f616
