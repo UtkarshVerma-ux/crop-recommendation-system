@@ -66,7 +66,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API Configuration
-API_URL = os.getenv("https://compliant-uninflamed-kitty.ngrok-free.dev", "http://localhost:8000")  # Change to your deployed URL
+API_URL = os.getenv("API_URL", "https://crop-recommendation-system-30tu.onrender.com")  # Change to your deployed URL
 
 # ============================================
 # HELPER FUNCTIONS
