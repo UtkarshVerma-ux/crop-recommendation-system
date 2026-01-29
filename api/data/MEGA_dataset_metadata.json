@@ -1,0 +1,76 @@
+{
+    "total_samples": 30319,
+    "total_crops": 31,
+    "crop_list": [
+        "apple",
+        "banana",
+        "blackgram",
+        "cassava",
+        "chickpea",
+        "coconut",
+        "coffee",
+        "cotton",
+        "grapes",
+        "jute",
+        "kidneybeans",
+        "lentil",
+        "maize",
+        "mango",
+        "mothbeans",
+        "mungbean",
+        "muskmelon",
+        "orange",
+        "papaya",
+        "pigeonpeas",
+        "plantains and others",
+        "pomegranate",
+        "potatoes",
+        "rice",
+        "rice, paddy",
+        "sorghum",
+        "soybeans",
+        "sweet potatoes",
+        "watermelon",
+        "wheat",
+        "yams"
+    ],
+    "sources": [
+        "Original",
+        "Yield"
+    ],
+    "ph_distribution": {
+        "acidic": 3053,
+        "neutral": 24086,
+        "alkaline": 3180
+    },
+    "feature_ranges": {
+        "N": [
+            0.0,
+            199.9949881146312
+        ],
+        "P": [
+            5.0,
+            199.98778198241789
+        ],
+        "K": [
+            5.0,
+            205.0
+        ],
+        "ph": [
+            3.1047001596224986,
+            9.93509073
+        ],
+        "temperature": [
+            8.825674745,
+            43.67549305
+        ],
+        "humidity": [
+            14.25803981,
+            99.98187601
+        ],
+        "rainfall": [
+            20.043211640472947,
+            298.5601175
+        ]
+    }
+}

@@ -1,0 +1,12 @@
+# Web Framework
+streamlit==1.29.0
+
+# Data Processing
+pandas==1.5.3
+numpy==1.26.3
+
+# Visualization
+plotly==5.18.0
+
+# HTTP Requests
+requests==2.31.0
