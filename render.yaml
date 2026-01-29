@@ -1,0 +1,16 @@
+services:
+  # API Service
+  - type: web
+    name: crop-recommendation-api
+    runtime: python
+    region: singapore
+    plan: free
+    branch: main
+    rootDir: api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.10.11"
+      - key: WEATHER_API_KEY
+        value: "15b3a9327f4039ff4e81dffc63a1f616"
