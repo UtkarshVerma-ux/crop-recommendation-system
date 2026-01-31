@@ -1,8 +1,7 @@
 """
-Farmer-Friendly Crop Recommendation Web Interface
-==================================================
-Beautiful Streamlit interface for pH-stratified crop prediction
-with automatic weather data fetching
+Farmer-Friendly Crop Recommendation Web Interface with Full XAI
+================================================================
+Includes SHAP, DiCE, and LIME visualizations
 """
 
 import os
@@ -16,13 +15,13 @@ import json
 
 # Page configuration
 st.set_page_config(
-    page_title="Smart Crop Recommendation System",
+    page_title="Smart Crop Recommendation System with XAI",
     page_icon="🌾",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
 <style>
     .main-header {
@@ -49,6 +48,13 @@ st.markdown("""
         border-radius: 15px;
         margin: 1rem 0;
     }
+    .xai-box {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+    }
     .stButton>button {
         background-color: #4CAF50;
         color: white;
@@ -66,7 +72,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API Configuration
-API_URL = os.getenv("API_URL", "https://crop-recommendation-system-30tu.onrender.com")  # Change to your deployed URL
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # ============================================
 # HELPER FUNCTIONS
@@ -76,9 +82,9 @@ def get_api_health():
     """Check if API is running"""
     try:
         response = requests.get(f"{API_URL}/health", timeout=2)
-        return response.status_code == 200
+        return response.status_code == 200, response.json()
     except:
-        return False
+        return False, None
 
 def predict_crop(soil_data):
     """Call API for prediction"""
@@ -86,7 +92,7 @@ def predict_crop(soil_data):
         response = requests.post(
             f"{API_URL}/predict_smart",
             json=soil_data,
-            timeout=10
+            timeout=30  # Increased timeout for XAI processing
         )
         response.raise_for_status()
         return response.json()
@@ -95,7 +101,7 @@ def predict_crop(soil_data):
         return None
 
 def create_fertility_gauge(score, status):
-    """Create a beautiful gauge chart for fertility score"""
+    """Create gauge chart for fertility score"""
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
         value=score,
@@ -127,6 +133,85 @@ def create_fertility_gauge(score, status):
         margin=dict(l=20, r=20, t=50, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         font={'color': "darkblue", 'family': "Arial"}
+    )
+    
+    return fig
+
+def create_shap_chart(shap_data):
+    """Create SHAP feature importance bar chart"""
+    if not shap_data or 'feature_importance' not in shap_data:
+        return None
+    
+    importance = shap_data['feature_importance']
+    
+    if not importance:
+        return None
+    
+    features = list(importance.keys())
+    values = list(importance.values())
+    
+    # Create color scale based on importance
+    colors = ['#1f77b4' if v > 15 else '#7fcdbb' if v > 10 else '#c7e9b4' for v in values]
+    
+    fig = go.Figure([go.Bar(
+        x=values,
+        y=features,
+        orientation='h',
+        marker=dict(color=colors),
+        text=[f"{v:.1f}%" for v in values],
+        textposition='auto',
+    )])
+    
+    fig.update_layout(
+        title={
+            'text': "🔍 SHAP Feature Importance Analysis",
+            'font': {'size': 18, 'color': '#1f77b4'}
+        },
+        xaxis_title="Importance (%)",
+        yaxis_title="Features",
+        height=400,
+        margin=dict(l=20, r=20, t=60, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(240,240,240,0.5)"
+    )
+    
+    return fig
+
+def create_lime_chart(lime_data):
+    """Create LIME feature importance bar chart"""
+    if not lime_data or 'feature_importance' not in lime_data:
+        return None
+    
+    importance = lime_data['feature_importance']
+    
+    if not importance:
+        return None
+    
+    features = list(importance.keys())
+    values = list(importance.values())
+    
+    colors = ['#ff7f0e' if v > 15 else '#ffbb78' if v > 10 else '#fdd0a2' for v in values]
+    
+    fig = go.Figure([go.Bar(
+        x=values,
+        y=features,
+        orientation='h',
+        marker=dict(color=colors),
+        text=[f"{v:.1f}%" for v in values],
+        textposition='auto',
+    )])
+    
+    fig.update_layout(
+        title={
+            'text': "💡 LIME Local Explanation",
+            'font': {'size': 18, 'color': '#ff7f0e'}
+        },
+        xaxis_title="Local Importance (%)",
+        yaxis_title="Features",
+        height=400,
+        margin=dict(l=20, r=20, t=60, b=20),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(240,240,240,0.5)"
     )
     
     return fig
@@ -196,6 +281,49 @@ def create_npk_radar(N, P, K):
     
     return fig
 
+def display_dice_counterfactuals(dice_data):
+    """Display DiCE counterfactual scenarios"""
+    if not dice_data or 'counterfactuals' not in dice_data:
+        st.info("DiCE counterfactuals not available")
+        return
+    
+    counterfactuals = dice_data.get('counterfactuals', [])
+    
+    if not counterfactuals:
+        st.info("No alternative scenarios found")
+        return
+    
+    st.markdown("### 🎯 Alternative Scenarios (DiCE Counterfactuals)")
+    
+    for i, cf in enumerate(counterfactuals, 1):
+        with st.expander(f"Scenario #{i}: {cf.get('suggested_crop', 'Unknown')}", expanded=(i==1)):
+            
+            changes = cf.get('changes_needed', {})
+            
+            if not changes:
+                st.write("No changes needed for this alternative")
+                continue
+            
+            st.markdown("**What would need to change:**")
+            
+            changes_df = []
+            for param, change_info in changes.items():
+                changes_df.append({
+                    'Parameter': param.upper(),
+                    'Current': f"{change_info['from']:.1f}",
+                    'Suggested': f"{change_info['to']:.1f}",
+                    'Change': f"{change_info['change']:+.1f}"
+                })
+            
+            df = pd.DataFrame(changes_df)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            feasible = cf.get('feasible', True)
+            if feasible:
+                st.success("✅ This scenario is feasible with moderate changes")
+            else:
+                st.warning("⚠️ This scenario requires significant changes")
+
 # ============================================
 # MAIN APP
 # ============================================
@@ -203,53 +331,80 @@ def create_npk_radar(N, P, K):
 def main():
     # Header
     st.markdown(
-        '<div class="main-header">🌾 Smart Crop Recommendation System 🌾</div>',
+        '<div class="main-header">🌾 Smart Crop Recommendation with AI Explainability 🔍</div>',
         unsafe_allow_html=True
     )
     
     # Check API status
-    if not get_api_health():
+    api_status, health_data = get_api_health()
+    
+    if not api_status:
         st.error("⚠️ API is not running! Please start the API server first.")
         st.code("cd api && python main.py", language="bash")
         st.stop()
     
-    st.success("✅ API Connected - System Ready!")
+    # Display XAI status
+    col1, col2 = st.columns([3, 1])
     
-    # Sidebar - System Info
+    with col1:
+        st.success("✅ API Connected - System Ready!")
+    
+    with col2:
+        if health_data and health_data.get('xai_enabled'):
+            xai_features = health_data.get('xai_features', {})
+            xai_status = []
+            if xai_features.get('shap'):
+                xai_status.append("SHAP ✅")
+            if xai_features.get('dice'):
+                xai_status.append("DiCE ✅")
+            if xai_features.get('lime'):
+                xai_status.append("LIME ✅")
+            
+            st.info(f"XAI: {', '.join(xai_status)}")
+        else:
+            st.warning("XAI: Not enabled")
+    
+    # Sidebar
     with st.sidebar:
         st.image("https://img.icons8.com/color/96/000000/wheat.png", width=80)
         st.title("📊 System Info")
         
         st.markdown("""
         ### 🎯 About
-        **pH-Stratified ML System**
+        **pH-Stratified ML with XAI**
         - Accuracy: 99.91%
-        - Crops Supported: 33
-        - pH Zones: 3 (Acidic/Neutral/Alkaline)
+        - Crops: 33
+        - pH Zones: 3
         
-        ### 🌟 Features
-        - ✅ Auto weather fetching
-        - ✅ Soil fertility analysis
-        - ✅ Cost estimates
-        - ✅ Improvement recommendations
-        - ✅ IoT device ready
+        ### 🔍 XAI Features
+        - ✅ **SHAP**: Global feature importance
+        - ✅ **DiCE**: Counterfactual scenarios
+        - ✅ **LIME**: Local explanations
+        
+        ### 🌟 System Features
+        - Auto weather fetching
+        - Soil fertility analysis
+        - Cost estimates
+        - Improvement recommendations
+        - Full explainability
         
         ### 📖 How to Use
-        1. Enter soil test results (N, P, K, pH)
-        2. Select your location
-        3. Click "Get Recommendation"
-        4. View results & recommendations
-        
-        ### 👨‍🌾 For Farmers
-        Only need soil test for N, P, K, pH.
-        Weather data fetched automatically!
+        1. Enter soil parameters (N, P, K, pH)
+        2. Select location
+        3. Enable XAI options
+        4. Get recommendations + explanations
         """)
         
         st.markdown("---")
-        st.caption("Developed for MTech Research | 2026")
+        st.caption("MTech Research 2026 | Full XAI Integration")
     
     # Main Content
-    tab1, tab2, tab3 = st.tabs(["🌾 Get Recommendation", "📚 About System", "🔧 API Integration"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🌾 Get Recommendation",
+        "🔍 About XAI",
+        "📚 About System",
+        "🔧 API Integration"
+    ])
     
     # ============================================
     # TAB 1: MAIN PREDICTION INTERFACE
@@ -261,7 +416,6 @@ def main():
         
         with col1:
             st.subheader("🧪 Soil Test Results")
-            st.markdown("*Get these from soil testing lab or NPK sensor*")
             
             N = st.number_input(
                 "Nitrogen (N) - kg/ha",
@@ -269,7 +423,7 @@ def main():
                 max_value=200.0,
                 value=90.0,
                 step=5.0,
-                help="Nitrogen content in soil (typical range: 40-150)"
+                help="Nitrogen content in soil"
             )
             
             P = st.number_input(
@@ -278,7 +432,7 @@ def main():
                 max_value=200.0,
                 value=42.0,
                 step=5.0,
-                help="Phosphorus content in soil (typical range: 20-100)"
+                help="Phosphorus content in soil"
             )
             
             K = st.number_input(
@@ -287,7 +441,7 @@ def main():
                 max_value=200.0,
                 value=43.0,
                 step=5.0,
-                help="Potassium content in soil (typical range: 20-100)"
+                help="Potassium content in soil"
             )
             
             ph = st.slider(
@@ -296,7 +450,7 @@ def main():
                 max_value=10.0,
                 value=6.5,
                 step=0.1,
-                help="Soil acidity/alkalinity (neutral: 6-7.5)"
+                help="Soil acidity/alkalinity"
             )
             
             # pH indicator
@@ -309,7 +463,6 @@ def main():
         
         with col2:
             st.subheader("📍 Location")
-            st.markdown("*Weather data will be fetched automatically*")
             
             location_method = st.radio(
                 "Select location method:",
@@ -320,7 +473,7 @@ def main():
                 location = st.text_input(
                     "Enter your city",
                     value="Lucknow, IN",
-                    help="Format: City, Country Code (e.g., Mumbai, IN)"
+                    help="Format: City, Country Code"
                 )
                 latitude = None
                 longitude = None
@@ -345,45 +498,38 @@ def main():
             
             st.markdown("---")
             
-            # Optional: Manual weather override
-            with st.expander("⚙️ Advanced: Override Weather Data"):
-                st.caption("Leave empty to auto-fetch from weather API")
-                
-                manual_temp = st.number_input(
-                    "Temperature (°C)",
-                    min_value=0.0,
-                    max_value=50.0,
-                    value=None,
-                    help="Leave empty for auto-fetch"
+            # XAI Options
+            st.subheader("🔍 Explainability Options")
+            
+            enable_xai = st.checkbox(
+                "Enable XAI Explanations",
+                value=True,
+                help="Get SHAP, DiCE, and LIME explanations"
+            )
+            
+            if enable_xai:
+                xai_methods = st.multiselect(
+                    "Select XAI methods:",
+                    ['shap', 'dice', 'lime'],
+                    default=['shap', 'dice'],
+                    help="SHAP: Feature importance, DiCE: Alternative scenarios, LIME: Local explanations"
                 )
-                
-                manual_humidity = st.number_input(
-                    "Humidity (%)",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=None,
-                    help="Leave empty for auto-fetch"
-                )
-                
-                manual_rainfall = st.number_input(
-                    "Rainfall (mm/month)",
-                    min_value=0.0,
-                    max_value=300.0,
-                    value=None,
-                    help="Leave empty for auto-fetch"
-                )
+            else:
+                xai_methods = []
         
         # Predict Button
         st.markdown("---")
         
-        if st.button("🚀 Get Crop Recommendation", use_container_width=True):
+        if st.button("🚀 Get Crop Recommendation with XAI", use_container_width=True):
             
             # Prepare API request
             soil_data = {
                 "N": N,
                 "P": P,
                 "K": K,
-                "ph": ph
+                "ph": ph,
+                "enable_xai": enable_xai,
+                "xai_methods": xai_methods if enable_xai else []
             }
             
             if location:
@@ -392,15 +538,8 @@ def main():
                 soil_data["latitude"] = latitude
                 soil_data["longitude"] = longitude
             
-            if manual_temp:
-                soil_data["temperature"] = manual_temp
-            if manual_humidity:
-                soil_data["humidity"] = manual_humidity
-            if manual_rainfall:
-                soil_data["rainfall"] = manual_rainfall
-            
-            # Show loading spinner
-            with st.spinner("🔍 Analyzing soil conditions..."):
+            # Show loading
+            with st.spinner("🔍 Analyzing soil conditions and generating explanations..."):
                 result = predict_crop(soil_data)
             
             if result:
@@ -429,7 +568,126 @@ def main():
                 
                 st.markdown("---")
                 
-                # Three column layout for key metrics
+                # ============================================
+                # XAI EXPLANATIONS SECTION
+                # ============================================
+                
+                if enable_xai and 'xai_explanations' in result:
+                    xai_exp = result['xai_explanations']
+                    
+                    st.markdown("""
+                    <div class="xai-box">
+                        <h2 style='text-align: center; margin: 0;'>
+                            🔍 AI Explainability (XAI) Results
+                        </h2>
+                        <p style='text-align: center; margin-top: 0.5rem;'>
+                            Understanding WHY the AI recommended this crop
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Create tabs for different XAI methods
+                    xai_tabs = []
+                    if 'shap' in xai_exp and xai_exp['shap'].get('feature_importance'):
+                        xai_tabs.append("📊 SHAP Analysis")
+                    if 'dice' in xai_exp and xai_exp['dice'].get('counterfactuals'):
+                        xai_tabs.append("🎯 DiCE Scenarios")
+                    if 'lime' in xai_exp and xai_exp['lime'].get('feature_importance'):
+                        xai_tabs.append("💡 LIME Explanation")
+                    
+                    if xai_tabs:
+                        xai_tab_objects = st.tabs(xai_tabs)
+                        
+                        tab_idx = 0
+                        
+                        # SHAP Tab
+                        if 'shap' in xai_exp and xai_exp['shap'].get('feature_importance'):
+                            with xai_tab_objects[tab_idx]:
+                                st.markdown("### 🔍 SHAP Feature Importance Analysis")
+                                
+                                shap_data = xai_exp['shap']
+                                
+                                col1, col2 = st.columns([2, 1])
+                                
+                                with col1:
+                                    # SHAP chart
+                                    shap_fig = create_shap_chart(shap_data)
+                                    if shap_fig:
+                                        st.plotly_chart(shap_fig, use_container_width=True)
+                                
+                                with col2:
+                                    st.markdown("**Interpretation:**")
+                                    st.write(shap_data.get('explanation_text', 'No explanation available'))
+                                    
+                                    st.markdown("**Top 3 Factors:**")
+                                    top_features = shap_data.get('top_features', [])
+                                    for i, (feat, imp) in enumerate(top_features, 1):
+                                        st.write(f"{i}. **{feat}**: {imp:.1f}%")
+                                    
+                                    st.info("""
+                                    **SHAP shows GLOBAL importance:**
+                                    Features with highest percentages
+                                    had the most impact on this
+                                    prediction across the model.
+                                    """)
+                            
+                            tab_idx += 1
+                        
+                        # DiCE Tab
+                        if 'dice' in xai_exp and xai_exp['dice'].get('counterfactuals'):
+                            with xai_tab_objects[tab_idx]:
+                                st.markdown("### 🎯 DiCE Counterfactual Scenarios")
+                                
+                                st.info("""
+                                **What are counterfactuals?**
+                                
+                                DiCE shows "what-if" scenarios: If you changed certain
+                                soil parameters, what other crops would be suitable?
+                                
+                                This helps you understand decision boundaries and
+                                plan soil improvements for alternative crops.
+                                """)
+                                
+                                display_dice_counterfactuals(xai_exp['dice'])
+                            
+                            tab_idx += 1
+                        
+                        # LIME Tab
+                        if 'lime' in xai_exp and xai_exp['lime'].get('feature_importance'):
+                            with xai_tab_objects[tab_idx]:
+                                st.markdown("### 💡 LIME Local Explanation")
+                                
+                                lime_data = xai_exp['lime']
+                                
+                                col1, col2 = st.columns([2, 1])
+                                
+                                with col1:
+                                    # LIME chart
+                                    lime_fig = create_lime_chart(lime_data)
+                                    if lime_fig:
+                                        st.plotly_chart(lime_fig, use_container_width=True)
+                                
+                                with col2:
+                                    st.markdown("**About LIME:**")
+                                    st.write(lime_data.get('explanation', 'Local explanation for this case'))
+                                    
+                                    st.info("""
+                                    **LIME shows LOCAL importance:**
+                                    
+                                    Unlike SHAP (global), LIME explains
+                                    this SPECIFIC prediction for YOUR
+                                    exact soil conditions.
+                                    
+                                    Useful for understanding edge cases
+                                    and unusual predictions.
+                                    """)
+                    
+                    st.markdown("---")
+                
+                # ============================================
+                # KEY METRICS
+                # ============================================
+                
                 col1, col2, col3 = st.columns(3)
                 
                 with col1:
@@ -461,7 +719,10 @@ def main():
                 
                 st.markdown("---")
                 
-                # Detailed Analysis Section
+                # ============================================
+                # DETAILED ANALYSIS TABS
+                # ============================================
+                
                 tab_detail1, tab_detail2, tab_detail3, tab_detail4 = st.tabs([
                     "📊 Fertility Analysis",
                     "🌾 Alternative Crops",
@@ -473,7 +734,6 @@ def main():
                     col1, col2 = st.columns([1, 1])
                     
                     with col1:
-                        # Fertility Gauge
                         gauge_fig = create_fertility_gauge(
                             result['fertility']['score'],
                             result['fertility']['status']
@@ -499,6 +759,14 @@ def main():
                         st.write(f"- Potassium (K): {provided['K']} kg/ha")
                         st.write(f"- pH: {provided['ph']}")
                         
+                        # Parameter scores
+                        if 'parameter_scores' in result['fertility']:
+                            st.markdown("**📈 Parameter Scores:**")
+                            param_scores = result['fertility']['parameter_scores']
+                            for param, score in param_scores.items():
+                                color = "🟢" if score >= 80 else "🟡" if score >= 65 else "🟠" if score >= 50 else "🔴"
+                                st.write(f"{color} {param.upper()}: {score:.1f}/100")
+                        
                         if result['fertility']['needs_improvement']:
                             st.warning(f"⚠️ {result['fertility']['deficiencies']} deficiencies detected")
                         else:
@@ -509,7 +777,6 @@ def main():
                     
                     alternatives = prediction['alternatives']
                     
-                    # Confidence chart
                     conf_fig = create_confidence_chart(alternatives)
                     st.plotly_chart(conf_fig, use_container_width=True)
                     
@@ -522,17 +789,13 @@ def main():
                     alt_df.columns = ['Rank', 'Crop', 'Suitability']
                     
                     st.dataframe(alt_df, use_container_width=True, hide_index=True)
-                    
-                    st.info("💡 All listed crops are viable options. Choose based on market prices and your preference!")
                 
                 with tab_detail3:
                     st.subheader("NPK Analysis")
                     
-                    # Radar chart
                     radar_fig = create_npk_radar(N, P, K)
                     st.plotly_chart(radar_fig, use_container_width=True)
                     
-                    # NPK Status
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
@@ -568,9 +831,9 @@ def main():
                         st.info(f"**Total Estimated Cost:** {result['cost_estimate']['total']}")
                         st.caption(f"**Timeline:** {result['cost_estimate']['timeline']}")
                     else:
-                        st.success("🎉 No improvements needed! Your soil is in excellent condition.")
+                        st.success("🎉 No improvements needed!")
                 
-                # Download Report Button
+                # Download Report
                 st.markdown("---")
                 
                 col1, col2, col3 = st.columns([1, 2, 1])
@@ -591,9 +854,122 @@ def main():
                     )
     
     # ============================================
-    # TAB 2: ABOUT SYSTEM
+    # TAB 2: ABOUT XAI
     # ============================================
     with tab2:
+        st.header("🔍 Understanding AI Explainability (XAI)")
+        
+        st.markdown("""
+        Our system uses three cutting-edge XAI techniques to make AI decisions transparent:
+        """)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("""
+            ### 📊 SHAP
+            **SHapley Additive exPlanations**
+            
+            **What it does:**
+            - Shows GLOBAL feature importance
+            - Calculates contribution of each parameter
+            - Based on game theory (Shapley values)
+            
+            **When to use:**
+            - Understanding overall model behavior
+            - Identifying key decision factors
+            - Validating domain knowledge
+            
+            **Example:**
+            "Rainfall contributed 35% to this recommendation,
+            pH contributed 25%, temperature 20%..."
+            
+            **Benefits:**
+            - ✅ Mathematically rigorous
+            - ✅ Consistent across predictions
+            - ✅ Scientifically validated
+            """)
+        
+        with col2:
+            st.markdown("""
+            ### 🎯 DiCE
+            **Diverse Counterfactual Explanations**
+            
+            **What it does:**
+            - Generates "what-if" scenarios
+            - Shows alternative paths
+            - Suggests actionable changes
+            
+            **When to use:**
+            - Planning soil improvements
+            - Understanding decision boundaries
+            - Exploring alternative crops
+            
+            **Example:**
+            "If you increase Nitrogen from 80 to 100,
+            and reduce pH from 7.0 to 6.5,
+            the system would recommend Wheat instead."
+            
+            **Benefits:**
+            - ✅ Actionable insights
+            - ✅ Multiple scenarios
+            - ✅ Helps planning
+            """)
+        
+        with col3:
+            st.markdown("""
+            ### 💡 LIME
+            **Local Interpretable Model-agnostic Explanations**
+            
+            **What it does:**
+            - Explains THIS specific prediction
+            - Local approximation of model
+            - Instance-specific importance
+            
+            **When to use:**
+            - Understanding unusual predictions
+            - Edge cases
+            - Your specific situation
+            
+            **Example:**
+            "For YOUR exact soil conditions (N=90, P=42...),
+            rainfall had 38% local importance,
+            which is higher than the global 35%."
+            
+            **Benefits:**
+            - ✅ Case-specific
+            - ✅ Easy to understand
+            - ✅ Model-agnostic
+            """)
+        
+        st.markdown("---")
+        
+        st.markdown("""
+        ### 🎓 Why Multiple XAI Methods?
+        
+        Different XAI techniques provide complementary insights:
+        
+        | Aspect | SHAP | DiCE | LIME |
+        |--------|------|------|------|
+        | **Scope** | Global | Counterfactual | Local |
+        | **Purpose** | Feature importance | Alternative scenarios | Specific case |
+        | **Best for** | Understanding model | Planning changes | Edge cases |
+        | **Output** | Importance % | What-if changes | Local importance |
+        
+        **Together, they provide complete transparency! 🔍**
+        """)
+        
+        st.info("""
+        **💡 Pro Tip:** Use all three methods together for maximum insight:
+        1. **SHAP** tells you what matters globally
+        2. **DiCE** shows you how to change outcomes
+        3. **LIME** explains your specific situation
+        """)
+    
+    # ============================================
+    # TAB 3: ABOUT SYSTEM (Keep existing)
+    # ============================================
+    with tab3:
         st.header("📚 About the System")
         
         col1, col2 = st.columns(2)
@@ -601,20 +977,18 @@ def main():
         with col1:
             st.subheader("🎯 Research Innovation")
             st.markdown("""
-            This system employs **pH-Stratified Machine Learning** for crop 
-            recommendation, achieving **99.91% accuracy** across 33 crops.
+            This system employs **pH-Stratified Machine Learning** with
+            **Full XAI Integration** for transparent crop recommendation.
             
             **Key Features:**
-            - 🧬 pH-zone specific models (Acidic/Neutral/Alkaline)
-            - 🎯 99.91% prediction accuracy
-            - 🌍 Automatic weather data integration
+            - 🧬 pH-zone specific models
+            - 🎯 99.91% accuracy
+            - 🔍 Complete explainability (SHAP + DiCE + LIME)
+            - 🌍 Automatic weather integration
             - 💰 Cost-effective recommendations
             - 📊 Soil fertility assessment
-            - 🔄 IoT device integration ready
             
-            **Supported Crops:** 33 major Indian crops including:
-            Rice, Wheat, Maize, Cotton, Sugarcane, Jute, Coffee, Tea, 
-            and many more fruits and vegetables.
+            **Supported Crops:** 33 major Indian crops
             """)
             
             st.subheader("🏆 Performance Metrics")
@@ -643,146 +1017,105 @@ def main():
                - Alkaline: pH > 7.5
             
             3. **ML Prediction**
-               - Zone-specific model analyzes soil
-               - Predicts best crop with confidence score
-               - Generates alternative options
+               - Zone-specific model predicts crop
+               - Confidence score calculated
+               - Alternative options generated
             
-            4. **Fertility Assessment**
-               - Calculates 0-100 fertility score
-               - Identifies deficiencies (N, P, K, pH)
-               - Generates improvement recommendations
+            4. **XAI Explanations**
+               - SHAP: Feature importance analysis
+               - DiCE: Counterfactual scenarios
+               - LIME: Local explanations
             
-            5. **Cost Estimation**
-               - Calculates fertilizer requirements
-               - Estimates total improvement cost
-               - Provides timeline for results
-            """)
+            5. **Fertility Assessment**
+               - 0-100 fertility score
+               - Deficiency identification
+               - Improvement recommendations
             
-            st.subheader("📖 Research Paper")
-            st.info("""
-            **Title:** pH-Stratified Ensemble Learning for Intelligent 
-            Crop Recommendation with Integrated Soil Fertility Assessment
-            
-            **Published:** 2026 (Pending)
-            
-            **Institution:** Gautam Buddha University, India
-            
-            **Degree:** MTech Thesis
+            6. **Cost Estimation**
+               - Fertilizer requirements
+               - Total cost calculation
+               - Timeline provided
             """)
     
     # ============================================
-    # TAB 3: API INTEGRATION
+    # TAB 4: API INTEGRATION (Keep existing)
     # ============================================
-    with tab3:
+    with tab4:
         st.header("🔧 API Integration Guide")
         
         st.markdown("""
-        This system provides a REST API for integration with:
-        - 🌾 IoT devices and sensors
-        - 📱 Mobile applications
-        - 💻 Web applications
-        - 🤖 Agricultural robots
+        ### 📡 API Endpoint with XAI
         """)
         
-        st.subheader("📡 API Endpoint")
         st.code(f"{API_URL}/predict_smart", language="text")
         
-        st.subheader("📝 Example Request (Python)")
+        st.markdown("### 📝 Example Request with XAI")
+        
         st.code("""
 import requests
 
-# Prepare soil data
 soil_data = {
     "N": 90,
     "P": 42,
     "K": 43,
     "ph": 6.5,
-    "location": "Lucknow, IN"
+    "location": "Lucknow, IN",
+    "enable_xai": True,
+    "xai_methods": ["shap", "dice", "lime"]
 }
 
-# Call API
 response = requests.post(
     "http://localhost:8000/predict_smart",
     json=soil_data
 )
 
-# Get results
 result = response.json()
-print(f"Recommended Crop: {result['prediction']['recommended_crop']}")
-print(f"Confidence: {result['prediction']['confidence']*100:.1f}%")
-print(f"Fertility Score: {result['fertility']['score']}/100")
+
+# Access predictions
+print(f"Crop: {result['prediction']['recommended_crop']}")
+print(f"Confidence: {result['prediction']['confidence']}")
+
+# Access XAI explanations
+shap_importance = result['xai_explanations']['shap']['feature_importance']
+print(f"Feature Importance: {shap_importance}")
+
+dice_scenarios = result['xai_explanations']['dice']['counterfactuals']
+print(f"Alternative Scenarios: {len(dice_scenarios)}")
         """, language="python")
         
-        st.subheader("📝 Example Request (Arduino/ESP32)")
-        st.code("""
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
-
-void sendToAPI() {
-    HTTPClient http;
-    http.begin("http://your-server.com:8000/predict_smart");
-    http.addHeader("Content-Type", "application/json");
-    
-    // Read sensors
-    float N = readNPK_N();
-    float P = readNPK_P();
-    float K = readNPK_K();
-    float ph = readPH();
-    
-    // Create JSON
-    StaticJsonDocument<512> doc;
-    doc["N"] = N;
-    doc["P"] = P;
-    doc["K"] = K;
-    doc["ph"] = ph;
-    doc["location"] = "Lucknow, IN";
-    
-    String json;
-    serializeJson(doc, json);
-    
-    // Send request
-    int httpCode = http.POST(json);
-    
-    if (httpCode == 200) {
-        String response = http.getString();
-        // Parse and display results
-    }
-    
-    http.end();
-}
-        """, language="cpp")
+        st.markdown("### 📊 Response with XAI")
         
-        st.subheader("📊 API Response Format")
         st.json({
             "prediction": {
                 "recommended_crop": "rice",
-                "confidence": 0.985,
-                "ph_zone": "neutral",
-                "alternatives": [
-                    {"crop": "rice", "confidence": 0.985},
-                    {"crop": "wheat", "confidence": 0.012}
-                ]
+                "confidence": 0.985
             },
-            "fertility": {
-                "score": 85.3,
-                "status": "EXCELLENT",
-                "deficiencies": 0,
-                "needs_improvement": False
-            },
-            "recommendations": [],
-            "cost_estimate": {
-                "total": "₹0/ha",
-                "timeline": "No improvements needed"
+            "xai_explanations": {
+                "shap": {
+                    "feature_importance": {
+                        "rainfall": 35.2,
+                        "ph": 25.1,
+                        "temperature": 20.3
+                    }
+                },
+                "dice": {
+                    "counterfactuals": [
+                        {
+                            "suggested_crop": "wheat",
+                            "changes_needed": {
+                                "rainfall": {"from": 100, "to": 70}
+                            }
+                        }
+                    ]
+                },
+                "lime": {
+                    "feature_importance": {
+                        "rainfall": 38.5,
+                        "ph": 22.1
+                    }
+                }
             }
         })
-        
-        st.markdown("---")
-        
-        st.info("""
-        **📖 Full API Documentation:** Visit `http://localhost:8000/docs` 
-        for interactive Swagger documentation with all endpoints and examples.
-        """)
 
 if __name__ == "__main__":
     main()
