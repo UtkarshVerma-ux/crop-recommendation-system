@@ -72,7 +72,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # API Configuration
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "https://crop-recommendation-system-30tu.onrender.com/")
 
 # ============================================
 # HELPER FUNCTIONS
@@ -1065,7 +1065,7 @@ soil_data = {
 }
 
 response = requests.post(
-    "http://localhost:8000/predict_smart",
+    "https://crop-recommendation-system-30tu.onrender.com/predict_smart",
     json=soil_data
 )
 
