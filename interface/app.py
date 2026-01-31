@@ -81,7 +81,7 @@ API_URL = os.getenv("API_URL", "https://crop-recommendation-system-30tu.onrender
 def get_api_health():
     """Check if API is running"""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=2)
+        response = requests.get(f"{API_URL}", timeout=2)
         return response.status_code == 200, response.json()
     except:
         return False, None

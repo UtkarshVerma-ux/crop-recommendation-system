@@ -899,7 +899,7 @@ if __name__ == "__main__":
     print("   💡 LIME: Local interpretable explanations")
     print("   🌤️  Auto weather fetching")
     print("   📊 Soil fertility assessment")
-    print("\n📖 Documentation: http://localhost:8000/docs")
+    print("\n📖 Documentation: https://crop-recommendation-system-30tu.onrender.com/")
     print("="*70 + "\n")
     
     uvicorn.run(app, host="0.0.0.0", port=8000)
